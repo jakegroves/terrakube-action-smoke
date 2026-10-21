@@ -27,8 +27,8 @@ jobs:
         with:
           TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
           TERRAKUBE_UI_URL: https://terrakube.localhost
-          TERRAKUBE_ORGANIZATION: action-smoke
-          TERRAKUBE_TEMPLATE: Terraform-Plan
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: Plan
           TERRAKUBE_ROOT: infra/smoke
           TERRAKUBE_WORKSPACE: action-smoke
           TERRAKUBE_BRANCH: ${{ github.ref_name }}
