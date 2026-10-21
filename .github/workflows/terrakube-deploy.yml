@@ -1,0 +1,62 @@
+name: Terrakube deployment test
+on: workflow_dispatch
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: terrakube-local-smoke
+  cancel-in-progress: false
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, terrakube-dev]
+    timeout-minutes: 10
+    outputs:
+      job-id: ${{ steps.terrakube.outputs.JOB_ID }}
+      has-changes: ${{ steps.terrakube.outputs.HAS_CHANGES }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: terrakube-io/terrakube-action-github@1812ad87e61af557b37711b42a9a22bd22480c73
+        id: terrakube
+        with:
+          TIMEOUT_SECONDS: '300'
+          COMMENT_MODE: off
+          TERRAKUBE_OPERATION: plan
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: GitHub Plan and Apply
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+  apply:
+    needs: plan
+    if: needs.plan.outputs.has-changes == 'true'
+    runs-on: [self-hosted, terrakube-dev]
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: terrakube-io/terrakube-action-github@1812ad87e61af557b37711b42a9a22bd22480c73
+        with:
+          TIMEOUT_SECONDS: '300'
+          COMMENT_MODE: off
+          TERRAKUBE_OPERATION: apply
+          TERRAKUBE_JOB_ID: ${{ needs.plan.outputs.job-id }}
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: GitHub Plan and Apply
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_UI_URL: https://terrakube.localhost

@@ -22,7 +22,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: terrakube-io/terrakube-action-github@fe53741a21a9a8b05f4faac6f286ada110ac28b1
+      - uses: terrakube-io/terrakube-action-github@1812ad87e61af557b37711b42a9a22bd22480c73
         id: terrakube
         with:
           TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
