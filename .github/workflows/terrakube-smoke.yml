@@ -1,0 +1,49 @@
+name: Terrakube smoke test
+on:
+  workflow_dispatch:
+    inputs:
+      auth:
+        description: API authentication
+        type: choice
+        options: [token, oidc]
+        default: token
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: terrakube-local-smoke
+  cancel-in-progress: false
+jobs:
+  smoke:
+    runs-on: [self-hosted, terrakube-dev]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: terrakube-io/terrakube-action-github@fe53741a21a9a8b05f4faac6f286ada110ac28b1
+        id: terrakube
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: action-smoke
+          TERRAKUBE_TEMPLATE: Terraform-Plan
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_AUTH: ${{ inputs.auth }}
+          TERRAKUBE_TOKEN: ${{ inputs.auth == 'token' && secrets.TERRAKUBE_DEV_PAT || '' }}
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local
+          TIMEOUT_SECONDS: '300'
+          COMMENT_MODE: off
+      - name: Show results
+        if: always()
+        env:
+          STATUS: ${{ steps.terrakube.outputs.STATUS }}
+          JOBS: ${{ steps.terrakube.outputs.JOBS }}
+        shell: bash
+        run: |
+          printf 'Status: %s\n' "$STATUS"
+          printf 'Jobs: %s\n' "$JOBS"
