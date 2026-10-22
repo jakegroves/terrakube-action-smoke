@@ -3,7 +3,7 @@ terraform {
 }
 
 resource "terraform_data" "smoke" {
-  input = "terrakube-action-smoke"
+  input = "terrakube-action-pr-feedback"
 }
 
 output "smoke" {
