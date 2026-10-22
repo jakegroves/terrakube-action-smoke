@@ -20,6 +20,31 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - name: Check GitHub OIDC access
+        shell: bash
+        run: |
+          node <<'NODE'
+          const https = require('node:https');
+          const url = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+          const token = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+          if (!url || !token) {
+            console.error(`OIDC settings present: URL=${Boolean(url)}, token=${Boolean(token)}`);
+            process.exitCode = 1;
+          } else {
+            const target = new URL(url);
+            target.searchParams.set('audience', 'api://terrakube-local');
+            const request = https.get(target, {headers: {Authorization: `Bearer ${token}`}}, response => {
+              console.log(`GitHub OIDC HTTP status: ${response.statusCode}`);
+              response.resume();
+              if (response.statusCode !== 200) process.exitCode = 1;
+            });
+            request.setTimeout(15000, () => request.destroy(new Error('OIDC request timed out')));
+            request.on('error', error => {
+              console.error(`OIDC request failed: ${error.code || error.name}`);
+              process.exitCode = 1;
+            });
+          }
+          NODE
       - uses: terrakube-io/terrakube-action-github@d20ae6d01701e32ff6c1c9ae314012d076ddaecf
         id: terrakube
         with:
