@@ -1,0 +1,69 @@
+name: Terrakube PR plan
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+concurrency:
+  group: terrakube-local-smoke
+  cancel-in-progress: false
+jobs:
+  plan:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'jakegroves'
+    runs-on: [self-hosted, terrakube-dev]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Prepare test variables
+        shell: bash
+        run: |
+          node <<'NODE'
+          const {randomUUID, createHash} = require('node:crypto');
+          const {appendFileSync} = require('node:fs');
+          const value = `${randomUUID()}\n${randomUUID()}\n`;
+          for (const line of value.trimEnd().split('\n')) console.log(`::add-mask::${line}`);
+          const delimiter = randomUUID();
+          appendFileSync(process.env.GITHUB_ENV,
+            `TF_VAR_smoke_private<<${delimiter}\n${value}\n${delimiter}\n` +
+            `TF_VAR_smoke_digest=${createHash('sha256').update(value).digest('hex')}\n`);
+          NODE
+      - uses: terrakube-io/terrakube-action-github@d20ae6d01701e32ff6c1c9ae314012d076ddaecf
+        id: terrakube
+        env:
+          TF_VAR_smoke_message: forwarded-from-github
+          TF_VAR_smoke_empty: ''
+          TF_VAR_smoke_regions: '["eu-west-1", "eu-west-2"]'
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: Plan
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local-variables
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.head_ref }}
+          TERRAKUBE_COMMIT: ${{ github.event.pull_request.head.sha }}
+          TERRAKUBE_VARIABLE_NAMES: |
+            smoke_message
+            smoke_private
+            smoke_digest
+            smoke_empty
+            smoke_regions
+          COMMENT_MODE: summary
+          TIMEOUT_SECONDS: '300'
+      - name: Show results
+        if: always()
+        env:
+          STATUS: ${{ steps.terrakube.outputs.STATUS }}
+          JOBS: ${{ steps.terrakube.outputs.JOBS }}
+        shell: bash
+        run: |
+          printf 'Status: %s\n' "$STATUS"
+          printf 'Jobs: %s\n' "$JOBS"
