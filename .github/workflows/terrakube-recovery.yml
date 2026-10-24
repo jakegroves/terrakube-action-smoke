@@ -21,7 +21,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+      - name: Replay completed apply
+        uses: terrakube-io/terrakube-action-github@c01217e44059e9c66dce068be1a109af4f4284a4
         id: replay
         with:
           TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
@@ -42,7 +43,8 @@ jobs:
         env:
           STATUS: ${{ steps.replay.outputs.STATUS }}
         run: test "$STATUS" = completed
-      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+      - name: Plan unchanged configuration
+        uses: terrakube-io/terrakube-action-github@c01217e44059e9c66dce068be1a109af4f4284a4
         id: unchanged
         with:
           TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
@@ -65,7 +67,8 @@ jobs:
         env:
           HAS_CHANGES: ${{ steps.unchanged.outputs.HAS_CHANGES }}
         run: test "$HAS_CHANGES" = false
-      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+      - name: Apply only when changes exist
+        uses: terrakube-io/terrakube-action-github@c01217e44059e9c66dce068be1a109af4f4284a4
         id: unexpected_apply
         if: steps.unchanged.outputs.HAS_CHANGES == 'true'
         with:
@@ -83,7 +86,8 @@ jobs:
           COMMENT_MODE: off
           TIMEOUT_SECONDS: '180'
           TERRAKUBE_JOB_ID: ${{ steps.unchanged.outputs.JOB_ID }}
-      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+      - name: Prepare a plan to discard
+        uses: terrakube-io/terrakube-action-github@c01217e44059e9c66dce068be1a109af4f4284a4
         id: discard_plan
         env:
           TF_VAR_smoke_message: release-43-not-applied
@@ -104,7 +108,8 @@ jobs:
           TERRAKUBE_VARIABLE_NAMES: |
             smoke_message
             smoke_regions
-      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+      - name: Discard the held plan
+        uses: terrakube-io/terrakube-action-github@c01217e44059e9c66dce068be1a109af4f4284a4
         id: discard
         with:
           TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
@@ -121,7 +126,8 @@ jobs:
           COMMENT_MODE: off
           TIMEOUT_SECONDS: '180'
           TERRAKUBE_JOB_ID: ${{ steps.discard_plan.outputs.JOB_ID }}
-      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+      - name: Repeat discard
+        uses: terrakube-io/terrakube-action-github@c01217e44059e9c66dce068be1a109af4f4284a4
         id: discard_again
         with:
           TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
@@ -142,3 +148,13 @@ jobs:
         env:
           JOBS: ${{ steps.discard_again.outputs.JOBS }}
         run: node -e 'require("node:assert/strict").equal(JSON.parse(process.env.JOBS)[0].status, "discarded")'
+      - name: Show recovery results
+        if: always()
+        env:
+          REPLAY: ${{ steps.replay.outputs.JOBS }}
+          UNCHANGED: ${{ steps.unchanged.outputs.JOBS }}
+          DISCARDED: ${{ steps.discard_again.outputs.JOBS }}
+        run: |
+          printf 'Replay: %s\n' "$REPLAY"
+          printf 'Unchanged: %s\n' "$UNCHANGED"
+          printf 'Discarded: %s\n' "$DISCARDED"
