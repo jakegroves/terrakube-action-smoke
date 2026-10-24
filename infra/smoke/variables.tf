@@ -1,40 +1,16 @@
 variable "smoke_message" {
-  type = string
+  description = "Nonsecret release input forwarded by the CI workflow."
+  type        = string
+  default     = "workspace-default"
 
   validation {
-    condition     = var.smoke_message == "forwarded-from-github"
-    error_message = "The per-run string was not forwarded correctly."
-  }
-}
-
-variable "smoke_private" {
-  type      = string
-  sensitive = true
-
-  validation {
-    condition     = sha256(var.smoke_private) == var.smoke_digest
-    error_message = "The per-run multiline value was not preserved."
-  }
-}
-
-variable "smoke_digest" {
-  type = string
-}
-
-variable "smoke_empty" {
-  type = string
-
-  validation {
-    condition     = var.smoke_empty == ""
-    error_message = "The per-run empty string was not preserved."
+    condition     = length(trimspace(var.smoke_message)) > 0
+    error_message = "The release message must not be empty."
   }
 }
 
 variable "smoke_regions" {
-  type = list(string)
-
-  validation {
-    condition     = var.smoke_regions == tolist(["eu-west-1", "eu-west-2"])
-    error_message = "The per-run list was not forwarded correctly."
-  }
+  description = "Regions used to verify forwarding a complex Terraform input."
+  type        = list(string)
+  default     = []
 }

@@ -3,7 +3,10 @@ terraform {
 }
 
 resource "terraform_data" "smoke" {
-  input = var.smoke_message
+  input = {
+    message = var.smoke_message
+    regions = var.smoke_regions
+  }
 }
 
 output "smoke" {

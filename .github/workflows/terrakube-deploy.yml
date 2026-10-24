@@ -1,14 +1,121 @@
 name: Terrakube deployment test
-on: workflow_dispatch
+on:
+  push:
+    branches: [test/pr-plan-feedback]
+    paths:
+      - '.github/workflows/terrakube-deploy.yml'
+      - '.github/scripts/check-machine-auth.cjs'
+      - 'infra/smoke/**'
+  workflow_dispatch:
 permissions:
   contents: read
   id-token: write
 concurrency:
   group: terrakube-local-smoke
   cancel-in-progress: false
+env:
+  SMOKE_ORGANIZATION_ID: d9b58bd3-f3fc-4056-a026-1163297e80a8
+  SMOKE_WORKSPACE_ID: 5c54bd64-f3e0-4b3d-93f5-d78149288902
+  SMOKE_DENIED_WORKSPACE_ID: e16ead77-8b3a-49e9-b903-2f9a33bc931b
+  SMOKE_CONTROL_WORKSPACE_ID: 88b88b03-9bdd-46e4-a85b-a785be2f4dc5
+  SMOKE_PLAN_TEMPLATE_ID: 42201234-a5e2-4c62-b2fc-9729ca6b4515
+  SMOKE_CONTROL_TEMPLATE_ID: 3404b7df-d90f-41da-9360-f9f1d2ccbed4
+  TF_VAR_smoke_message: release-42
+  TF_VAR_smoke_regions: '["eu-west-1", "eu-west-2"]'
 jobs:
+  auth:
+    runs-on: [self-hosted, terrakube-dev]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check machine authentication boundaries
+        run: node .github/scripts/check-machine-auth.cjs
+  failure:
+    needs: auth
+    runs-on: [self-hosted, terrakube-dev]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: terrakube-io/terrakube-action-github@f98c939e12130a0cf2e627cf55a7ae1dfe2f6277
+        id: terrakube
+        continue-on-error: true
+        with:
+          TIMEOUT_SECONDS: '900'
+          POLL_INTERVAL_SECONDS: '10'
+          COMMENT_MODE: off
+          TERRAKUBE_OPERATION: run
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: Smoke failed plan
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local-variables
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_VARIABLE_NAMES: |
+            smoke_message
+            smoke_regions
+      - name: Check that a remote failure fails the action
+        if: always()
+        env:
+          OUTCOME: ${{ steps.terrakube.outcome }}
+          JOBS: ${{ steps.terrakube.outputs.JOBS }}
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          assert.equal(process.env.OUTCOME, 'failure');
+          const jobs = JSON.parse(process.env.JOBS);
+          assert.equal(jobs.length, 1);
+          assert.equal(jobs[0].status, 'failed');
+          assert.ok(jobs[0].jobId);
+          NODE
+  renewal:
+    needs: failure
+    runs-on: [self-hosted, terrakube-dev]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Record initial OIDC expiry
+        id: expiry
+        run: node .github/scripts/check-machine-auth.cjs expiry
+      - uses: terrakube-io/terrakube-action-github@f98c939e12130a0cf2e627cf55a7ae1dfe2f6277
+        id: terrakube
+        with:
+          TIMEOUT_SECONDS: '900'
+          POLL_INTERVAL_SECONDS: '10'
+          COMMENT_MODE: off
+          TERRAKUBE_OPERATION: run
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: Smoke token renewal
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local-variables
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_VARIABLE_NAMES: |
+            smoke_message
+            smoke_regions
+      - name: Check that polling continued beyond the initial token expiry
+        env:
+          EXPIRES_AT: ${{ steps.expiry.outputs.expires-at }}
+        run: |
+          node -e 'require("node:assert/strict").ok(Date.now() > Number(process.env.EXPIRES_AT) * 1000, "Run must outlast the initial token")'
   plan:
-    if: github.ref == 'refs/heads/main'
+    needs: renewal
     runs-on: [self-hosted, terrakube-dev]
     timeout-minutes: 10
     outputs:
@@ -19,21 +126,26 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: terrakube-io/terrakube-action-github@d20ae6d01701e32ff6c1c9ae314012d076ddaecf
+      - uses: terrakube-io/terrakube-action-github@f98c939e12130a0cf2e627cf55a7ae1dfe2f6277
         id: terrakube
         with:
-          TIMEOUT_SECONDS: '300'
+          TIMEOUT_SECONDS: '900'
+          POLL_INTERVAL_SECONDS: '10'
           COMMENT_MODE: off
           TERRAKUBE_OPERATION: plan
           TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
           TERRAKUBE_ORGANIZATION: simple
           TERRAKUBE_TEMPLATE: GitHub Plan and Apply
           TERRAKUBE_AUTH: oidc
-          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local-variables
           TERRAKUBE_ROOT: infra/smoke
           TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
           TERRAKUBE_COMMIT: ${{ github.sha }}
-          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_VARIABLE_NAMES: |
+            smoke_message
+            smoke_regions
   apply:
     needs: plan
     if: needs.plan.outputs.has-changes == 'true'
@@ -45,18 +157,21 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: terrakube-io/terrakube-action-github@d20ae6d01701e32ff6c1c9ae314012d076ddaecf
+      - uses: terrakube-io/terrakube-action-github@f98c939e12130a0cf2e627cf55a7ae1dfe2f6277
+        id: terrakube
         with:
-          TIMEOUT_SECONDS: '300'
+          TIMEOUT_SECONDS: '900'
+          POLL_INTERVAL_SECONDS: '10'
           COMMENT_MODE: off
           TERRAKUBE_OPERATION: apply
-          TERRAKUBE_JOB_ID: ${{ needs.plan.outputs.job-id }}
           TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
           TERRAKUBE_ORGANIZATION: simple
           TERRAKUBE_TEMPLATE: GitHub Plan and Apply
           TERRAKUBE_AUTH: oidc
-          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-smoke-apply
           TERRAKUBE_ROOT: infra/smoke
           TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
           TERRAKUBE_COMMIT: ${{ github.sha }}
-          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_JOB_ID: ${{ needs.plan.outputs.job-id }}
