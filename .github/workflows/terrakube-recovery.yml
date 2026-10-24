@@ -1,7 +1,7 @@
 name: Terrakube recovery test
 on:
   push:
-    branches: [test/pr-plan-feedback]
+    branches: [test/recovery]
     paths: ['.github/workflows/terrakube-recovery.yml']
 permissions:
   contents: read
