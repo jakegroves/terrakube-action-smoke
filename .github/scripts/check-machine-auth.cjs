@@ -73,7 +73,11 @@ async function main() {
     const current = await api(jwt, 'GET', `${route}/job/${id}`);
     assert.equal(current.status, 200);
     const status = current.body.data.attributes.status;
-    if (status === 'waitingApproval') { waiting = true; break; }
+    if (status === 'waitingApproval') {
+      assert.equal(current.body.data.attributes.approvalTeam, 'action-smoke-apply');
+      waiting = true;
+      break;
+    }
     assert.ok(!['failed', 'rejected', 'cancelled'].includes(status), `Control job ${id} ended as ${status}`);
     await new Promise(resolve => setTimeout(resolve, 5000));
   }
