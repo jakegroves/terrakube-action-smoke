@@ -1,5 +1,7 @@
 name: OIDC module live validation
 on:
+  push:
+    branches: [test/module-oidc-validation]
   workflow_dispatch:
 permissions:
   contents: read
