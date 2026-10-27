@@ -1,49 +1,110 @@
-name: Terrakube smoke test
+name: OIDC module live validation
 on:
   workflow_dispatch:
-    inputs:
-      auth:
-        description: API authentication
-        type: choice
-        options: [token, oidc]
-        default: token
 permissions:
   contents: read
   id-token: write
 concurrency:
-  group: terrakube-local-smoke
+  group: terrakube-module-validation
   cancel-in-progress: false
+env:
+  TK_ORG: d9b58bd3-f3fc-4056-a026-1163297e80a8
+  TK_WORKSPACE: 38adf5da-3dda-4f83-ab3f-d70bcb649fb1
+  TK_OTHER: 52b8700b-319e-490d-b683-f3bd46e363f1
+  TK_CONTROL: 5c1f2bb6-393c-49c9-84ce-1988168604cd
+  TK_PLAN_TEMPLATE: 3f34b876-2ef6-46eb-9626-7b0433948a2b
+  TK_CONTROL_TEMPLATE: 109296db-e3d4-4127-8996-7a86ae034ae9
 jobs:
-  smoke:
+  authorization:
     runs-on: [self-hosted, terrakube-dev]
     timeout-minutes: 10
+    outputs:
+      control-job-id: ${{ steps.check.outputs.control-job-id }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: terrakube-io/terrakube-action-github@d20ae6d01701e32ff6c1c9ae314012d076ddaecf
+      - name: Test the module-generated plan identity
+        id: check
+        run: node .github/scripts/check-module-auth.cjs plan
+  plan:
+    needs: authorization
+    runs-on: [self-hosted, terrakube-dev]
+    timeout-minutes: 10
+    outputs:
+      job-id: ${{ steps.terrakube.outputs.JOB_ID }}
+      has-changes: ${{ steps.terrakube.outputs.HAS_CHANGES }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: terrakube-io/terrakube-action-github@f4ad636431fc9340efd7fbd023e198b87cbda5ec
         id: terrakube
         with:
           TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
           TERRAKUBE_UI_URL: https://terrakube.localhost
           TERRAKUBE_ORGANIZATION: simple
-          TERRAKUBE_TEMPLATE: Plan
+          TERRAKUBE_WORKSPACE: oidc-module-selected
           TERRAKUBE_ROOT: infra/smoke
-          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_TEMPLATE: OIDC module validation saved plan
+          TERRAKUBE_OPERATION: plan
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://module-validation
           TERRAKUBE_BRANCH: ${{ github.ref_name }}
           TERRAKUBE_COMMIT: ${{ github.sha }}
-          TERRAKUBE_AUTH: ${{ inputs.auth }}
-          TERRAKUBE_TOKEN: ${{ inputs.auth == 'token' && secrets.TERRAKUBE_DEV_PAT || '' }}
-          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local
-          TIMEOUT_SECONDS: '300'
           COMMENT_MODE: off
-      - name: Show results
-        if: always()
+          TIMEOUT_SECONDS: '450'
+  apply:
+    needs: [authorization,plan]
+    if: needs.plan.outputs.has-changes == 'true'
+    runs-on: [self-hosted, terrakube-dev]
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: terrakube-io/terrakube-action-github@f4ad636431fc9340efd7fbd023e198b87cbda5ec
+        id: applied
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_WORKSPACE: oidc-module-selected
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_TEMPLATE: OIDC module validation saved plan
+          TERRAKUBE_OPERATION: apply
+          TERRAKUBE_JOB_ID: ${{ needs.plan.outputs.job-id }}
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://module-validation
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          COMMENT_MODE: off
+          TIMEOUT_SECONDS: '450'
+      - name: Test the module-generated apply identity and discard control
         env:
-          STATUS: ${{ steps.terrakube.outputs.STATUS }}
-          JOBS: ${{ steps.terrakube.outputs.JOBS }}
-        shell: bash
-        run: |
-          printf 'Status: %s\n' "$STATUS"
-          printf 'Jobs: %s\n' "$JOBS"
+          TK_CONTROL_JOB: ${{ needs.authorization.outputs.control-job-id }}
+        run: node .github/scripts/check-module-auth.cjs apply
+      - uses: terrakube-io/terrakube-action-github@f4ad636431fc9340efd7fbd023e198b87cbda5ec
+        id: unchanged
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_WORKSPACE: oidc-module-selected
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_TEMPLATE: OIDC module validation saved plan
+          TERRAKUBE_OPERATION: plan
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://module-validation
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          COMMENT_MODE: off
+          TIMEOUT_SECONDS: '450'
+      - name: Verify no-change result
+        env:
+          HAS_CHANGES: ${{ steps.unchanged.outputs.HAS_CHANGES }}
+        run: test "$HAS_CHANGES" = false
