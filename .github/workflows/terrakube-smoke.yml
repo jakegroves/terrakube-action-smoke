@@ -90,6 +90,15 @@ jobs:
         env:
           TK_CONTROL_JOB: ${{ needs.authorization.outputs.control-job-id }}
         run: node .github/scripts/check-module-auth.cjs apply
+  verify:
+    needs: apply
+    runs-on: [self-hosted, terrakube-dev]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: terrakube-io/terrakube-action-github@f4ad636431fc9340efd7fbd023e198b87cbda5ec
         id: unchanged
         with:

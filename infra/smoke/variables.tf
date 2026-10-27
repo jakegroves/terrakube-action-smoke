@@ -1,7 +1,7 @@
 variable "smoke_message" {
   description = "Nonsecret release input forwarded by the CI workflow."
   type        = string
-  default     = "workspace-default-authz-fix"
+  default     = "workspace-default-authz-fix-2"
 
   validation {
     condition     = length(trimspace(var.smoke_message)) > 0
