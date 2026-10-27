@@ -175,3 +175,4 @@ jobs:
           TERRAKUBE_BRANCH: ${{ github.ref_name }}
           TERRAKUBE_COMMIT: ${{ github.sha }}
           TERRAKUBE_JOB_ID: ${{ needs.plan.outputs.job-id }}
+# Re-run against the job-creation permission fix (fix/job-create-requires-plan-permission, 9c98b9b4)
