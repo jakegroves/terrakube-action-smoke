@@ -1,0 +1,52 @@
+name: Terrakube PR plan
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+concurrency:
+  group: terrakube-local-smoke
+  cancel-in-progress: false
+jobs:
+  plan:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'jakegroves'
+    runs-on: [self-hosted, terrakube-dev]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+        id: terrakube
+        env:
+          TF_VAR_smoke_message: forwarded-from-github
+          TF_VAR_smoke_regions: '["eu-west-1", "eu-west-2"]'
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: Plan
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-local-variables
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.head_ref }}
+          TERRAKUBE_COMMIT: ${{ github.event.pull_request.head.sha }}
+          TERRAKUBE_VARIABLE_NAMES: |
+            smoke_message
+            smoke_regions
+          COMMENT_MODE: summary
+          TIMEOUT_SECONDS: '300'
+      - name: Show results
+        if: always()
+        env:
+          STATUS: ${{ steps.terrakube.outputs.STATUS }}
+          JOBS: ${{ steps.terrakube.outputs.JOBS }}
+        shell: bash
+        run: |
+          printf 'Status: %s\n' "$STATUS"
+          printf 'Jobs: %s\n' "$JOBS"

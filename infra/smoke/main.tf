@@ -1,9 +1,12 @@
 terraform {
-  required_version = ">= 1.4.0"
+  required_version = ">= 1.9.0"
 }
 
 resource "terraform_data" "smoke" {
-  input = "terrakube-action-smoke"
+  input = {
+    message = var.smoke_message
+    regions = var.smoke_regions
+  }
 }
 
 output "smoke" {

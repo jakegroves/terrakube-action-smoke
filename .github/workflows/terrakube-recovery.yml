@@ -1,0 +1,144 @@
+name: Terrakube recovery test
+on:
+  push:
+    branches: [test/pr-plan-feedback]
+    paths: ['.github/workflows/terrakube-recovery.yml']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: terrakube-local-smoke
+  cancel-in-progress: false
+env:
+  TF_VAR_smoke_message: release-42
+  TF_VAR_smoke_regions: '["eu-west-1", "eu-west-2"]'
+jobs:
+  verify:
+    runs-on: [self-hosted, terrakube-dev]
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+        id: replay
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: GitHub Plan and Apply
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-recovery-apply
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: 935aa892511c0d2223ff91cb82be3c393d43737e
+          TERRAKUBE_OPERATION: apply
+          COMMENT_MODE: off
+          TIMEOUT_SECONDS: '180'
+          TERRAKUBE_JOB_ID: 6
+      - name: Confirm replay returns the completed job
+        env:
+          STATUS: ${{ steps.replay.outputs.STATUS }}
+        run: test "$STATUS" = completed
+      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+        id: unchanged
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: GitHub Plan and Apply
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-recovery-variables
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_OPERATION: plan
+          COMMENT_MODE: off
+          TIMEOUT_SECONDS: '180'
+          TERRAKUBE_VARIABLE_NAMES: |
+            smoke_message
+            smoke_regions
+      - name: Confirm unchanged input needs no apply
+        env:
+          HAS_CHANGES: ${{ steps.unchanged.outputs.HAS_CHANGES }}
+        run: test "$HAS_CHANGES" = false
+      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+        id: unexpected_apply
+        if: steps.unchanged.outputs.HAS_CHANGES == 'true'
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: GitHub Plan and Apply
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-recovery-apply
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_OPERATION: apply
+          COMMENT_MODE: off
+          TIMEOUT_SECONDS: '180'
+          TERRAKUBE_JOB_ID: ${{ steps.unchanged.outputs.JOB_ID }}
+      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+        id: discard_plan
+        env:
+          TF_VAR_smoke_message: release-43-not-applied
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: GitHub Plan and Apply
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-recovery-variables
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_OPERATION: plan
+          COMMENT_MODE: off
+          TIMEOUT_SECONDS: '180'
+          TERRAKUBE_VARIABLE_NAMES: |
+            smoke_message
+            smoke_regions
+      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+        id: discard
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: GitHub Plan and Apply
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-recovery-apply
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_OPERATION: discard
+          COMMENT_MODE: off
+          TIMEOUT_SECONDS: '180'
+          TERRAKUBE_JOB_ID: ${{ steps.discard_plan.outputs.JOB_ID }}
+      - uses: terrakube-io/terrakube-action-github@dd670ca4bd2bd8539d4ff5162a1d7b4be4c57952
+        id: discard_again
+        with:
+          TERRAKUBE_ENDPOINT: https://terrakube-api.localhost
+          TERRAKUBE_UI_URL: https://terrakube.localhost
+          TERRAKUBE_ORGANIZATION: simple
+          TERRAKUBE_TEMPLATE: GitHub Plan and Apply
+          TERRAKUBE_AUTH: oidc
+          TERRAKUBE_OIDC_AUDIENCE: api://terrakube-recovery-apply
+          TERRAKUBE_ROOT: infra/smoke
+          TERRAKUBE_WORKSPACE: action-smoke
+          TERRAKUBE_BRANCH: ${{ github.ref_name }}
+          TERRAKUBE_COMMIT: ${{ github.sha }}
+          TERRAKUBE_OPERATION: discard
+          COMMENT_MODE: off
+          TIMEOUT_SECONDS: '180'
+          TERRAKUBE_JOB_ID: ${{ steps.discard_plan.outputs.JOB_ID }}
+      - name: Confirm discard is idempotent
+        env:
+          JOBS: ${{ steps.discard_again.outputs.JOBS }}
+        run: node -e 'require("node:assert/strict").equal(JSON.parse(process.env.JOBS)[0].status, "discarded")'
