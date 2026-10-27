@@ -12,6 +12,8 @@ async function token(audience = 'api://module-validation') {
   const {value} = await response.json();
   assert.equal(typeof value, 'string');
   console.log(`::add-mask::${value}`);
+  const claims = JSON.parse(Buffer.from(value.split('.')[1], 'base64url'));
+  console.log('Issued workload context:', JSON.stringify({repository:claims.repository,event:claims.event_name,ref:claims.ref,environment:claims.environment || null}));
   return value;
 }
 
